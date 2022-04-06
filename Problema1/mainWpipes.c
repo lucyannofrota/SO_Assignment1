@@ -2,9 +2,6 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
 /*
     //Command
@@ -115,44 +112,10 @@ int processo4(int *childStatus){
     }
 }
 
-#define MY_SOCKET_NAME "SKT"
-
 int main(int arc, char **argv){
     printf("Problema 1\n");
 
     printf("Processo Pai inicializando processos |PID: %i\n",getpid());
-
-    // Verificando se o socket ja existe
-    struct stat stat_sock;
-    if(stat(MY_SOCKET_NAME, &stat_sock) == 0){
-        printf("O socket ja existe!\n");
-        if(unlink(MY_SOCKET_NAME) == -1){
-            perror("unlink\n");
-        }
-        else printf("Socket deletado!\n");
-    }
-
-    // Criando Socket
-    int my_socket = socket(AF_UNIX, SOCK_STREAM, AF_LOCAL);
-    if (my_socket == -1){
-        perror("Socket Error");
-    }
-    else{
-        printf("Criando novo Socket!\n");
-        struct sockaddr_un socket_address;
-
-        socket_address.sun_family = AF_LOCAL;
-        // *socket_address.sun_path = MY_SOCKET_NAME;
-        // memset (&socket_address, AF_UNIX, sizeof (struct sockaddr_un));
-        strncpy (socket_address.sun_path, MY_SOCKET_NAME, sizeof(socket_address.sun_path) - 1);
-        printf("Socket:\nFamily: %i|Name: %s\n",socket_address.sun_family,socket_address.sun_path);
-        if(bind(my_socket, &socket_address, sizeof(socket_address)) == -1){
-            perror("Bind Error");
-        }
-    }
-
-    if (listen (my_socket, 1) == -1)
-        error ("listen");
 
     // Criando Pipes
     int fd_1[2]; pipe(fd_1);
@@ -170,8 +133,8 @@ int main(int arc, char **argv){
     wait(&childStatus3);
 
     // Executando o ultimo processo
-    // int childStatus4; processo4(&childStatus4); // Chamando Processo 4
-    // wait(&childStatus4);
+    int childStatus4; processo4(&childStatus4); // Chamando Processo 4
+    wait(&childStatus4);
     printf("Done!\n");
 
     return 0;
