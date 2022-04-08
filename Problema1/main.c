@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+
 /*
     //Command
     find . -type f -ls | cut -c 2- | sort -n -k 7 >file.txt ; less <file.txt
@@ -19,22 +20,60 @@
 // O codigo foi separado em processos para simpleificar o entendimento.
 // Cada processo se encarrega de fazer um fork para poder utilizar o execl() e retorna PID do processo filho
 
-int processo1(int *childStatus,int *fd){
+// A comunicação entre o processo 1 e processo 2 deve ser feita utilizando AF_LOCAL.
+// Como esse tipo de comunicação é do tipo cliente-servidor. Optou-se por definir que o processo 1 se comportará como o servidor e o processo 2 se comportará como o client
+
+// A parte da conexão UF_UNIX foi inspirada no exemplo disponibilizado no site da IBM
+//Servidor - https://www.ibm.com/docs/en/i/7.1?topic=uauaf-example-server-application-that-uses-af-unix-address-family
+//Cliente - https://www.ibm.com/docs/en/i/7.1?topic=uauaf-example-client-application-that-uses-af-unix-address-family
+
+
+#define MY_SOCKET_NAME "SKT"
+
+int processo1(int *childStatus){
 
     // Fazendo Fork
     int myPID = fork();
-    if(myPID == -1){
-        perror("Failed to fork\n");
-        return 1;
-    }
+    if(myPID == -1) perror("Failed to fork\n");
     if(myPID == 0){ // Selecionando processo filho
-        // Pretende-se redirecionar o output para o pipe1
-
+        // Pretende-se redirecionar o output para o socket criado
         printf("Processo 1 |PID: %i\n",getpid());
-        close(fd[0]); // Fechar porta de leitura
-        dup2(fd[1],1); // Redirecionar porta de escrita
-        close(fd[1]); // Fechar porta de escrita
-        execl("/bin/find","find",".","-type","f","-ls",NULL);
+
+        // Verificando se o socket ja existe
+        struct stat stat_sock;
+        if(stat(MY_SOCKET_NAME, &stat_sock) == 0){
+            printf("O socket ja existe!\n");
+            if(unlink(MY_SOCKET_NAME) == -1) perror("Unlink Error\n");
+            else printf("Socket deletado!\n");
+        }
+
+        // Criando Socket
+        int my_socket = socket(AF_UNIX, SOCK_STREAM, AF_LOCAL);
+        if (my_socket == -1) perror("Socket Error");
+        else printf("Criando novo Socket!\n");
+        struct sockaddr_un socket_address;
+
+        socket_address.sun_family = AF_LOCAL;
+        strncpy (socket_address.sun_path, MY_SOCKET_NAME, sizeof(socket_address.sun_path) - 1);
+        if(bind(my_socket, &socket_address, sizeof(socket_address)) == -1) perror("Bind Error");
+
+        if (listen (my_socket, 1) == -1)
+            perror ("Listen Error");
+
+        int connection = accept(my_socket, NULL, NULL);
+        if (connection < 0) perror("Accept() failed");
+        else{
+            printf("Server| Incoming Connection\n");
+
+            close(1); // Fechar porta de escrita
+            dup2(connection,1); // Redirecionar porta de escrita para socket
+            execl("/bin/find","find",".","-type","f","-ls",NULL);
+        }
+
+        // Fechar Conexões abertas 
+        close(my_socket);
+        close(connection);
+        unlink(MY_SOCKET_NAME);
         exit(1);
     }
     else{ // Processo pai
@@ -42,27 +81,35 @@ int processo1(int *childStatus,int *fd){
     }
 }
 
-int processo2(int *childStatus, int *fd1,int *fd2){
+int processo2(int *childStatus,int *fd){
     // Fazendo Fork
     int myPID = fork();
-    if(myPID == -1){
-        perror("Failed to fork\n");
-        return 1;
-    }
+    if(myPID == -1) perror("Failed to fork\n");
     if(myPID == 0){ // Selecionando processo filho
-        // Pretende-se redirecionar o input para o pipe1 e redirecionar o output para o pipe2
+        // Pretende-se redirecionar o input para o socket do servidor e redirecionar o output para o pipe2
 
         printf("Processo 2 |PID: %i\n",getpid());
-        // fd1
-        close(fd1[1]); // Fechar porta de escrita
-        dup2(fd1[0],0); // Redirecionar porta de leitura
-        close(fd1[0]); // Fechar porta de leitura
 
-        // fd2
-        close(fd2[0]); // Fechar porta de leitura
-        dup2(fd2[1],1); // Redirecionar porta de escrita
-        close(fd2[1]); // Fechar porta de escrita
+        // Inicializando Socket
+        int my_socket = socket(AF_UNIX, SOCK_STREAM, AF_LOCAL);
+        if (my_socket == -1) perror("Socket Error");
+        struct sockaddr_un socket_address;
+
+        socket_address.sun_family = AF_LOCAL;
+        strncpy (socket_address.sun_path, MY_SOCKET_NAME, sizeof(socket_address.sun_path) - 1);
+
+
+        close(0); // Fechar porta de leitura
+        if(connect(my_socket, &socket_address, sizeof(socket_address)) == -1) perror("Connect Error");
+        sleep(1); //Sleep para garantir que o processo 1 enviará as informações antes que o processo 2 tente fazer a leitura
+        printf("Client| Connecting\n");
+        dup2(my_socket,0);
+        // fd
+        close(fd[0]); // Fechar porta de leitura
+        dup2(fd[1],1); // Redirecionar porta de escrita
+        close(fd[1]); // Fechar porta de escrita
         execl("/bin/cut","cut","-c","2-",NULL);
+
         exit(1);
     }
     else{ // Processo pai
@@ -73,10 +120,7 @@ int processo2(int *childStatus, int *fd1,int *fd2){
 int processo3(int *childStatus, int *fd){
     // Fazendo Fork
     int myPID = fork();
-    if(myPID == -1){
-        perror("Failed to fork\n");
-        return 1;
-    }
+    if(myPID == -1) perror("Failed to fork\n");
     if(myPID == 0){ // Selecionando processo filho
         printf("Processo 3 |PID: %i\n",getpid());
         // Pretende-se redirecionar o input para o pipe2 e redirecionar o output para o file: "file.txt"
@@ -97,10 +141,7 @@ int processo3(int *childStatus, int *fd){
 int processo4(int *childStatus){
     // Fazendo Fork
     int myPID = fork();
-    if(myPID == -1){
-        perror("Failed to fork\n");
-        return 1;
-    }
+    if(myPID == -1) perror("Failed to fork\n");
     if(myPID == 0){ // Selecionando processo filho
         printf("Processo 4 |PID: %i\n",getpid());
         // Pretende-se redirecionar o input para o file: "file.txt" 
@@ -115,63 +156,30 @@ int processo4(int *childStatus){
     }
 }
 
-#define MY_SOCKET_NAME "SKT"
-
 int main(int arc, char **argv){
     printf("Problema 1\n");
 
     printf("Processo Pai inicializando processos |PID: %i\n",getpid());
 
-    // Verificando se o socket ja existe
-    struct stat stat_sock;
-    if(stat(MY_SOCKET_NAME, &stat_sock) == 0){
-        printf("O socket ja existe!\n");
-        if(unlink(MY_SOCKET_NAME) == -1){
-            perror("unlink\n");
-        }
-        else printf("Socket deletado!\n");
-    }
 
-    // Criando Socket
-    int my_socket = socket(AF_UNIX, SOCK_STREAM, AF_LOCAL);
-    if (my_socket == -1){
-        perror("Socket Error");
-    }
-    else{
-        printf("Criando novo Socket!\n");
-        struct sockaddr_un socket_address;
-
-        socket_address.sun_family = AF_LOCAL;
-        // *socket_address.sun_path = MY_SOCKET_NAME;
-        // memset (&socket_address, AF_UNIX, sizeof (struct sockaddr_un));
-        strncpy (socket_address.sun_path, MY_SOCKET_NAME, sizeof(socket_address.sun_path) - 1);
-        printf("Socket:\nFamily: %i|Name: %s\n",socket_address.sun_family,socket_address.sun_path);
-        if(bind(my_socket, &socket_address, sizeof(socket_address)) == -1){
-            perror("Bind Error");
-        }
-    }
-
-    if (listen (my_socket, 1) == -1)
-        error ("listen");
 
     // Criando Pipes
-    int fd_1[2]; pipe(fd_1);
-    int fd_2[2]; pipe(fd_2);
+    int fd[2]; pipe(fd);
 
-    int childStatus1; processo1(&childStatus1,fd_1); // Chamando Processo 1
-    int childStatus2; processo2(&childStatus2,fd_1,fd_2); // Chamando Processo 2
-    close(fd_1[0]); close(fd_1[1]); // Fechando o pipe que existe entre o processo 1 e processo 2
-    int childStatus3; processo3(&childStatus3,fd_2); // Chamando Processo 3
-    close(fd_2[0]); close(fd_2[1]); // Fechando o pipe que existe entre o processo 2 e processo 3
+    int childStatus1; processo1(&childStatus1); // Chamando Processo 1
+    int childStatus2; processo2(&childStatus2,fd); // Chamando Processo 2
+    int childStatus3; processo3(&childStatus3,fd); // Chamando Processo 3
+    close(fd[0]); close(fd[1]); // Fechando o pipe que existe entre o processo 2 e processo 3
 
     // Esperando que os 3 processos terminem
     wait(&childStatus1);
+    sleep(1); // Sleep necessario para que o servidor possa inicializar o socket
     wait(&childStatus2);
     wait(&childStatus3);
 
     // Executando o ultimo processo
-    // int childStatus4; processo4(&childStatus4); // Chamando Processo 4
-    // wait(&childStatus4);
+    int childStatus4; processo4(&childStatus4); // Chamando Processo 4
+    wait(&childStatus4);
     printf("Done!\n");
 
     return 0;
