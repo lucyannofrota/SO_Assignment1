@@ -4,35 +4,12 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
-// #include <stdio.h>
-// #include <unistd.h>
-// #include <sys/wait.h>
-// #include <fcntl.h>
-// #include <sys/types.h>
-// #include <sys/socket.h>
-// #include <sys/un.h>
-// #include <sys/stat.h>
-// #include <errno.h>
-
 int AgentPID;
 
 void catch_sigint(int val){
     kill(AgentPID,SIGINT);
     exit(0);
-    // kill(getpid(),SIGINT);
-    // read_text();
 }
-
-// void read_text(void){
-//     printf("\n\nReading text.in:\n");
-//     int std_in = dup(0);
-//     close(0);
-//     int fd = open("text.in",O_RDONLY,0666);
-//     scanf("%s",buffer);
-//     printf("%s\n",buffer);
-//     close(fd);
-//     dup(std_in);
-// }
 
 
 int main(int arc, char **argv){
