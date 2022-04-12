@@ -3,11 +3,8 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/types.h>
-// #include <semaphore.h>
 
-#define MAXBUF 5
-
-// sem_t sem;
+#define MAXBUF 3
 
 void initialize_table(int *table){
     int i;
@@ -46,24 +43,12 @@ int processo_filho(int *childStatus,int pai_PID){
         
         print_table(filho_table);
 
-        printf("Filho: %i\n",getpid());
+        while(kill(pai_PID,0) == 0){
+            usleep(2);
+        }
 
-        sleep(5);
-        pause();
-
-        // sem_wait(sem);
-
-        // while(kill(pai_PID,0) == 0){
-        //     sleep(1);
-        // }
-        // if(kill(pai_PID,0) == 0) printf("Agent found.\n");
-        // else{
-        //     printf("Error: no agent found.\n");
-        
-        //     return 0;
-        // }
         printf("The child process is terminating.\n");
-        // sem_destroy(sem);
+        exit(0);
     }
     else{ // Processo pai
         return myPID; 
@@ -79,16 +64,10 @@ int main(int arc, char **argv){
     // Salvar a tabela no file "filetable.bin"
     save_table(table);
 
-    // Criando Semaforo
-    // sem_init(&sem, 1, 0);
-
     // Criando Processo Filho
     int pai_PID = getpid();
     int status_filho; int filho_PID = processo_filho(&status_filho,pai_PID);
-    // printf("asdsa\n");
-    kill(filho_PID,0);
     printf("The parent process is terminating.\n");
-    // sem_post(&sem);
     return 0;
 }
 

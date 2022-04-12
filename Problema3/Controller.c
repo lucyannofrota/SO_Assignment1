@@ -44,7 +44,7 @@ int main(int arc, char **argv){
     close(0);
     int fd = open("Agent.pid",O_RDONLY,0666);
     scanf("%i",&AgentPID);
-    printf("%i\n",AgentPID);
+    printf("Searching for PID: %i\n",AgentPID);
     close(fd);
 
     dup(std_in);
